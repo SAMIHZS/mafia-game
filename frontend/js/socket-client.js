@@ -1,10 +1,12 @@
 /**
  * frontend/js/socket-client.js
- * Socket.IO client setup with reconnection handling.
+ * Socket.IO client with reconnect handling and JWT-based auto-rejoin.
  *
- * Connects to the backend server.
- * Phase 2: Add auth token in handshake.auth.
+ * Phase 3: Stores JWT token → auto-rejoin on reconnect.
+ * Backend URL configured via window.__MAFIA_CONFIG__.backendUrl
+ * (set in index.html meta tag — override for production Railway URL).
  */
+
 
 (function () {
     // Determine backend URL: check localStorage override (for dev) or use window.location
@@ -45,12 +47,20 @@
         updateConnectionStatus('connected');
         Utils.showToast('Connected to server', 'success', 2000);
 
-        // If we were in a room before disconnect, attempt to rejoin
+        // If we have a stored JWT token, attempt secure auto-rejoin
+        const storedToken = sessionStorage.getItem('mafia_token');
         const savedRoom = sessionStorage.getItem('mafia_room');
-        const savedPlayer = sessionStorage.getItem('mafia_player');
-        if (savedRoom && savedPlayer) {
-            // TODO (Phase 2): emit 'rejoin_room' with savedRoom + old socket info
-            // socket.emit('rejoin_room', { roomId: savedRoom });
+        if (storedToken && savedRoom) {
+            console.log('[Socket] Attempting JWT rejoin for room:', savedRoom);
+            socket.emit('rejoin_room', { token: storedToken });
+        }
+    });
+
+    // ─── Auth Token (Phase 3) — store JWT on join/rejoin ─────────
+    socket.on('auth_token', ({ token }) => {
+        if (token) {
+            sessionStorage.setItem('mafia_token', token);
+            console.log('[Socket] JWT token stored');
         }
     });
 

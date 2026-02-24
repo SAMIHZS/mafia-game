@@ -12,6 +12,7 @@
 const logger = require('../utils/logger');
 const gameLogic = require('../services/game-logic');
 const voteCounter = require('../services/vote-counter');
+const auth = require('../middleware/auth');
 const {
     CLIENT_EVENTS,
     SERVER_EVENTS,
@@ -79,6 +80,10 @@ function registerSocketEvents(io, roomManager) {
                     players: room.getPlayers().map(p => p.toPublicJSON()),
                     settings: room.settings
                 });
+
+                // Issue JWT for secure rejoin
+                const token = auth.issueToken(room.roomId, player.name, socket.id);
+                socket.emit('auth_token', { token });
 
                 socket.to(room.roomId).emit(SERVER_EVENTS.PLAYER_JOINED, {
                     name: player.name,
@@ -309,16 +314,33 @@ function registerSocketEvents(io, roomManager) {
         });
 
         // ══════════════════════════════════════════════════════════
-        // REJOIN ROOM
+        // REJOIN ROOM (JWT-secured)
         // ══════════════════════════════════════════════════════════
         socket.on(CLIENT_EVENTS.REJOIN_ROOM, (data) => {
             try {
-                const { roomCode, playerName } = data || {};
+                const { token } = data || {};
+
+                // ── Try JWT first ─────────────────────────────────────────
+                let roomCode, playerName;
+                if (token) {
+                    try {
+                        const decoded = auth.verifyToken(token);
+                        roomCode = decoded.roomCode;
+                        playerName = decoded.playerName;
+                    } catch {
+                        return socket.emit(SERVER_EVENTS.ERROR, { message: 'Session expired. Please rejoin manually.' });
+                    }
+                } else {
+                    // Fallback: legacy name-based rejoin
+                    roomCode = data?.roomCode?.toUpperCase();
+                    playerName = data?.playerName;
+                }
+
                 if (!roomCode || !playerName) {
                     return socket.emit(SERVER_EVENTS.ERROR, { message: 'Room code and player name are required' });
                 }
 
-                const room = roomManager.findRoom(roomCode.toUpperCase());
+                const room = roomManager.findRoom(roomCode);
                 if (!room) return socket.emit(SERVER_EVENTS.ERROR, { message: 'Room not found' });
                 if (room.gameState === GAME_PHASES.GAME_OVER) return socket.emit(SERVER_EVENTS.ERROR, { message: 'Game is over' });
 
@@ -335,7 +357,7 @@ function registerSocketEvents(io, roomManager) {
                     room.gracePeriodTimers.delete(player.socketId);
                 }
 
-                // Reassign socket ID (key migration in Map)
+                // Migrate socket ID
                 const oldSocketId = player.socketId;
                 room.players.delete(oldSocketId);
                 player.socketId = socket.id;
@@ -346,7 +368,12 @@ function registerSocketEvents(io, roomManager) {
 
                 socket.join(room.roomId);
 
-                // Send full state sync
+                // Issue fresh JWT
+                const newToken = auth.issueToken(room.roomId, player.name, socket.id);
+                socket.emit('auth_token', { token: newToken });
+
+                // Full state sync
+                const ROLE_DESCRIPTIONS = require('./constants').ROLE_DESCRIPTIONS;
                 socket.emit(SERVER_EVENTS.SYNC_FULL_STATE, {
                     roomId: room.roomId,
                     playerId: socket.id,
@@ -356,14 +383,13 @@ function registerSocketEvents(io, roomManager) {
                     timeLeft: room.timeLeft(),
                     myRole: player.role ? {
                         role: player.role,
-                        label: require('./constants').ROLE_DESCRIPTIONS[player.role]?.label,
-                        description: require('./constants').ROLE_DESCRIPTIONS[player.role]?.description,
-                        icon: require('./constants').ROLE_DESCRIPTIONS[player.role]?.icon,
-                        team: require('./constants').ROLE_DESCRIPTIONS[player.role]?.team
+                        label: ROLE_DESCRIPTIONS[player.role]?.label,
+                        description: ROLE_DESCRIPTIONS[player.role]?.description,
+                        icon: ROLE_DESCRIPTIONS[player.role]?.icon,
+                        team: ROLE_DESCRIPTIONS[player.role]?.team
                     } : null
                 });
 
-                // Notify others
                 socket.to(room.roomId).emit(SERVER_EVENTS.PLAYER_JOINED, {
                     name: player.name,
                     reconnect: true,

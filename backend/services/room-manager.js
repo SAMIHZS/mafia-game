@@ -2,29 +2,26 @@
 
 /**
  * services/room-manager.js
- * In-memory CRUD for game rooms.
- *
- * Phase 2: updateSocketMap for rejoin. Phase 3: Replace with MongoDB.
+ * Phase 3: MongoDB-backed room persistence.
+ * In-memory Map still drives active game logic.
+ * MongoDB = durable store (survives server restarts for lobby rooms).
  */
 
-const { v4: uuidv4 } = require('uuid');
 const Room = require('../models/Room');
 const Player = require('../models/Player');
+const RoomDoc = require('../models/RoomDoc');
 const logger = require('../utils/logger');
-const { ROOM_SETTINGS, ROOM_SETTINGS: RS } = require('../config/constants');
+const { isDbConnected } = require('./db');
+const { ROOM_SETTINGS } = require('../config/constants');
 
-// In-memory store: roomCode → Room
+// In-memory store: roomCode → Room (game engine source of truth)
 const rooms = new Map();
 
-// Reverse index: socketId → roomCode (for quick lookup on disconnect)
+// Reverse index: socketId → roomCode
 const socketToRoom = new Map();
 
 // ─── Room Code Generation ─────────────────────────────────────────────────────
 
-/**
- * Generates a secure, 8-character alphanumeric room code.
- * Characters chosen to avoid visual confusion (0/O, 1/I/l removed).
- */
 function generateRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
@@ -34,7 +31,6 @@ function generateRoomCode() {
     return code;
 }
 
-/** Generate a unique code not already in use. */
 function generateUniqueCode() {
     let code;
     let attempts = 0;
@@ -46,84 +42,115 @@ function generateUniqueCode() {
     return code;
 }
 
-// ─── CRUD Operations ──────────────────────────────────────────────────────────
+// ─── CRUD ────────────────────────────────────────────────────────────────────
 
-/** Create a new room. Returns the Room instance. */
-function createRoom(hostSocketId = null) {
+/**
+ * Create a new room in memory + MongoDB.
+ * @param {string|null} hostSocketId
+ * @returns {Room}
+ */
+async function createRoom(hostSocketId = null) {
     const roomId = generateUniqueCode();
     const room = new Room(roomId, hostSocketId);
     rooms.set(roomId, room);
-    logger.info(`Room created: ${roomId} (host: ${hostSocketId})`);
+    logger.info(`Room created: ${roomId}`);
+
+    // Persist to MongoDB (fire-and-forget — game works without it)
+    if (isDbConnected()) {
+        RoomDoc.create({
+            roomCode: roomId,
+            hostName: 'unknown', // updated when first player joins
+            playerNames: [],
+            gameState: 'WAITING_LOBBY',
+            settings: room.settings,
+            expiresAt: new Date(room.expiresAt)
+        }).catch(err => logger.error('DB createRoom error', err.message));
+    }
+
     return room;
 }
 
-/** Find a room by code. Returns Room or null. */
+/** Find a room by code. */
 function findRoom(code) {
     return rooms.get(code.toUpperCase()) || null;
 }
 
-/** Delete a room by code. */
+/** Delete a room from memory + MongoDB. */
 function deleteRoom(code) {
     const room = rooms.get(code);
     if (!room) return false;
 
-    // Clean up socket → room index for all players
+    // Clear phase timer to prevent leaked timers
+    room.clearPhaseTimer();
+
     for (const player of room.getPlayers()) {
         socketToRoom.delete(player.socketId);
     }
     rooms.delete(code);
     logger.info(`Room deleted: ${code}`);
+
+    if (isDbConnected()) {
+        RoomDoc.deleteOne({ roomCode: code })
+            .catch(err => logger.error('DB deleteRoom error', err.message));
+    }
+
     return true;
 }
 
-/** Find what room a socket is currently in. */
+/** Get room by socket ID. */
 function getRoomBySocket(socketId) {
     const roomCode = socketToRoom.get(socketId);
-    if (!roomCode) return null;
-    return rooms.get(roomCode) || null;
+    return roomCode ? (rooms.get(roomCode) || null) : null;
 }
 
-/** Get total active room count. */
-function getRoomCount() {
-    return rooms.size;
-}
+/** Get total rooms in memory. */
+function getRoomCount() { return rooms.size; }
 
 // ─── Player Join / Leave ──────────────────────────────────────────────────────
 
 /**
  * Add a player to a room.
- * Returns the new Player instance.
- * Throws on validation failure.
+ * @returns {Player}
  */
 function joinRoom(roomCode, socketId, name) {
     const room = findRoom(roomCode);
     if (!room) throw new Error('Room not found');
     if (room.gameState !== 'WAITING_LOBBY') throw new Error('Game already in progress');
     if (room.players.size >= room.settings.maxPlayers) throw new Error('Room is full');
-    if (room.isNameTaken(name)) throw new Error('Name already taken');
+    if (room.isNameTaken(name)) throw new Error('Name already taken in this room');
 
-    // Validate name: 2-20 chars, alphanumeric + spaces
-    if (!name || name.trim().length < 2 || name.trim().length > 20) {
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2 || trimmedName.length > 20) {
         throw new Error('Name must be 2-20 characters');
     }
-    if (!/^[a-zA-Z0-9 ]+$/.test(name.trim())) {
+    if (!/^[a-zA-Z0-9 ]+$/.test(trimmedName)) {
         throw new Error('Name can only contain letters, numbers, and spaces');
     }
 
-    const isHost = room.players.size === 0;  // First to join is host
+    const isHost = room.players.size === 0;
     if (!room.hostId) room.hostId = socketId;
 
-    const player = new Player(socketId, name.trim(), isHost);
+    const player = new Player(socketId, trimmedName, isHost);
     room.addPlayer(player);
     socketToRoom.set(socketId, roomCode);
 
-    logger.info(`Player joined: ${name} → Room ${roomCode} (host: ${isHost})`);
+    logger.info(`"${trimmedName}" joined ${roomCode} (host: ${isHost})`);
+
+    // Update MongoDB player list
+    if (isDbConnected()) {
+        const playerNames = room.getPlayers().map(p => p.name);
+        RoomDoc.updateOne(
+            { roomCode },
+            { $set: { playerNames, hostName: room.getPlayer(room.hostId)?.name || 'unknown' } }
+        ).catch(err => logger.error('DB joinRoom update error', err.message));
+    }
+
     return player;
 }
 
 /**
  * Remove a player from their room.
- * Returns { room, player } or null if not found.
+ * @returns {{ room, player } | null}
  */
 function leaveRoom(socketId) {
     const room = getRoomBySocket(socketId);
@@ -135,26 +162,60 @@ function leaveRoom(socketId) {
     room.removePlayer(socketId);
     socketToRoom.delete(socketId);
 
-    logger.info(`Player left: ${player.name} ← Room ${room.roomId}`);
+    logger.info(`"${player.name}" left ${room.roomId}`);
+
+    // Update MongoDB
+    if (isDbConnected()) {
+        const playerNames = room.getPlayers().map(p => p.name);
+        RoomDoc.updateOne(
+            { roomCode: room.roomId },
+            { $set: { playerNames } }
+        ).catch(err => logger.error('DB leaveRoom update error', err.message));
+    }
+
     return { room, player };
 }
 
 /**
- * Update the reverse-index when a player rejoins with a new socket ID.
- * Called by rejoin_room handler after migrating the player's socket ID.
- *
- * @param {string} oldSocketId
- * @param {string} newSocketId
- * @param {string} roomCode
+ * Update the socket→room index when a player rejoins with a new socket ID.
  */
 function updateSocketMap(oldSocketId, newSocketId, roomCode) {
     socketToRoom.delete(oldSocketId);
     socketToRoom.set(newSocketId, roomCode);
 }
 
+// ─── Startup Restore ─────────────────────────────────────────────────────────
+
+/**
+ * On server startup, reload WAITING_LOBBY rooms from MongoDB into memory.
+ * Mid-game rooms are too complex to restore without full game state — skipped.
+ */
+async function restoreRoomsFromDB() {
+    if (!isDbConnected()) return;
+
+    try {
+        const docs = await RoomDoc.find({ gameState: 'WAITING_LOBBY' }).lean();
+        let restored = 0;
+
+        for (const doc of docs) {
+            if (rooms.has(doc.roomCode)) continue; // already in memory
+            if (new Date() > new Date(doc.expiresAt)) continue; // expired
+
+            const room = new Room(doc.roomCode, null);
+            Object.assign(room.settings, doc.settings);
+            room.expiresAt = new Date(doc.expiresAt).getTime();
+            rooms.set(doc.roomCode, room);
+            restored++;
+        }
+
+        if (restored > 0) logger.info(`Restored ${restored} rooms from MongoDB`);
+    } catch (err) {
+        logger.error('Failed to restore rooms from DB', err.message);
+    }
+}
+
 // ─── Auto-Cleanup ─────────────────────────────────────────────────────────────
 
-/** Remove expired rooms. Called on an interval. */
 function cleanupExpiredRooms() {
     let cleaned = 0;
     for (const [code, room] of rooms.entries()) {
@@ -163,12 +224,9 @@ function cleanupExpiredRooms() {
             cleaned++;
         }
     }
-    if (cleaned > 0) {
-        logger.info(`Cleaned up ${cleaned} expired rooms`);
-    }
+    if (cleaned > 0) logger.info(`Cleaned up ${cleaned} expired rooms`);
 }
 
-// Run cleanup every 5 minutes
 setInterval(cleanupExpiredRooms, 5 * 60 * 1000);
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
@@ -182,5 +240,6 @@ module.exports = {
     joinRoom,
     leaveRoom,
     updateSocketMap,
+    restoreRoomsFromDB,
     cleanupExpiredRooms
 };

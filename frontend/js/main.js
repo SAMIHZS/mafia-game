@@ -489,7 +489,14 @@
                 if (codeEl) codeEl.textContent = data.roomCode;
                 document.getElementById('create-room-result')?.classList.remove('hidden');
                 document.getElementById('create-room-form')?.classList.add('hidden');
+
+                // Generate QR code for easy room sharing (Phase 3)
+                if (typeof window.generateRoomQR === 'function') {
+                    window.generateRoomQR(data.roomCode);
+                }
+
                 await RoomManager.joinRoom(data.roomCode, name);
+
             } catch (err) {
                 Utils.showToast(err.message, 'error');
                 document.getElementById('create-room-result')?.classList.add('hidden');

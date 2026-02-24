@@ -15,6 +15,8 @@
 const logger = require('../utils/logger');
 const roleAssigner = require('./role-assigner');
 const voteCounter = require('./vote-counter');
+const GameHistoryDoc = require('../models/GameHistoryDoc');
+const { isDbConnected } = require('./db');
 const {
     GAME_PHASES,
     ROLES,
@@ -314,13 +316,30 @@ function endGame(room, io, winner) {
 
     logger.info(`Game over: ${room.roomId} | Winner: ${winner}`);
 
-    // Schedule room cleanup 5 minutes after game over
-    setTimeout(() => {
-        // Rooms are cleaned up by room-manager's expiry sweep anyway
-        // This just force-marks the room inactive
-        room.expiresAt = Date.now() + 5 * 60 * 1000;
-    }, 0);
+    // ── Persist game history to MongoDB ──────────────────────────────────────
+    if (isDbConnected()) {
+        GameHistoryDoc.create({
+            roomCode: room.roomId,
+            winner,
+            players: room.getPlayers().map(p => ({
+                name: p.name,
+                role: p.role,
+                alive: p.alive,
+                isHost: p.isHost
+            })),
+            stats: {
+                rounds: room.gameHistory.dayCount,
+                nightKills: room.gameHistory.nightKills,
+                eliminated: room.gameHistory.eliminated
+            },
+            playerCount: room.players.size
+        }).catch(err => logger.error('DB save GameHistory error', err.message));
+    }
+
+    // Mark room as expiring soon so it gets cleaned up
+    setTimeout(() => { room.expiresAt = Date.now() + 5 * 60 * 1000; }, 0);
 }
+
 
 // ─── Early Night Resolution ────────────────────────────────────────────────────
 
