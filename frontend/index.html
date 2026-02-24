@@ -19,8 +19,9 @@
     <!-- Config — update backendUrl for production (Railway URL) -->
     <script>
         window.__MAFIA_CONFIG__ = {
-            // Development: 'http://localhost:3001'
-            // Production:  'https://your-app.railway.app'
+            // 🔴 IMPORTANT BEFORE DEPLOYING:
+            // Change backendUrl to your Railway production URL.
+            // Example: 'https://mafia-game-production.up.railway.app'
             backendUrl: 'http://localhost:3001',
             debug: false
         };
@@ -29,12 +30,27 @@
     <!-- QRCode.js (Phase 3) -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 
-    <!-- Socket.IO Client (served from backend) -->
+    <!-- Socket.IO & Game Scripts (Phase 3 loaded dynamically to prevent race condition) -->
     <script>
-        // Dynamically load Socket.IO from the configured backend
         (function () {
+            var backend = window.__MAFIA_CONFIG__.backendUrl || 'http://localhost:3001';
             var s = document.createElement('script');
-            s.src = (window.__MAFIA_CONFIG__.backendUrl || 'http://localhost:3001') + '/socket.io/socket.io.js';
+            s.src = backend + '/socket.io/socket.io.js';
+            s.onload = function () {
+                // Load game scripts only AFTER Socket.IO is ready
+                var scripts = [
+                    'js/utils.js',
+                    'js/socket-client.js',
+                    'js/room-manager.js',
+                    'js/game-ui.js',
+                    'js/main.js'
+                ];
+                scripts.forEach(function (src) {
+                    var el = document.createElement('script');
+                    el.src = src;
+                    document.body.appendChild(el);
+                });
+            };
             document.head.appendChild(s);
         })();
     </script>
@@ -457,21 +473,16 @@
         </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════ -->
-    <!-- Scripts — order matters: utils → socket → room-mgr → ui → main -->
-    <!-- ══════════════════════════════════════════════════════════ -->
-    <script src="js/utils.js"></script>
-    <script src="js/socket-client.js"></script>
-    <script src="js/room-manager.js"></script>
-    <script src="js/game-ui.js"></script>
-    <script src="js/main.js"></script>
-
+    <!-- Note: Game scripts are loaded dynamically in the <head> s.onload callback -->
     <script>
-        document.getElementById('join-room-back-btn')?.addEventListener('click', function () {
-            document.getElementById('join-room-back')?.click();
-        });
-        document.getElementById('btn-close-detective-modal')?.addEventListener('click', function () {
-            document.getElementById('detective-modal')?.classList.remove('active');
+        // Setup simple inline event listeners
+        document.addEventListener('DOMContentLoaded', function () {
+            document.getElementById('join-room-back-btn')?.addEventListener('click', function () {
+                document.getElementById('join-room-back')?.click();
+            });
+            document.getElementById('btn-close-detective-modal')?.addEventListener('click', function () {
+                document.getElementById('detective-modal')?.classList.remove('active');
+            });
         });
 
         // QR Code generation (Phase 3)

@@ -160,15 +160,21 @@ class Room {
     /**
      * Returns true when all alive special-role players have submitted their night action.
      * Allows early resolution of the night phase.
+     *
+     * Multi-Mafia fix: requires ALL alive Mafia to have set nightActionDone,
+     * not just any killTarget being present. The kill target used will be the
+     * last one submitted (most recent Mafia to vote wins).
      */
     hasAllNightActions() {
         const alive = this.getAlivePlayers();
 
-        const mafiaCount = alive.filter(p => p.role === ROLES.MAFIA).length;
+        const aliveMafia = alive.filter(p => p.role === ROLES.MAFIA);
         const doctorCount = alive.filter(p => p.role === ROLES.DOCTOR).length;
         const detectiveCount = alive.filter(p => p.role === ROLES.DETECTIVE).length;
 
-        if (mafiaCount > 0 && this.nightActions.killTarget === null) return false;
+        // Every alive Mafia member must have submitted their action
+        if (aliveMafia.length > 0 && !aliveMafia.every(p => p.nightActionDone)) return false;
+
         if (doctorCount > 0 && this.nightActions.saveTarget === null) return false;
         if (detectiveCount > 0 && this.nightActions.detectiveTarget === null) return false;
 

@@ -13,7 +13,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mafia-dev-secret-change-in-product
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-    logger.error('⚠️  JWT_SECRET not set in production — using insecure default!');
+    logger.error('FATAL: JWT_SECRET is not set in production. Refusing to start with insecure default.');
+    process.exit(1);
 }
 
 /**
@@ -26,8 +27,10 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
  * @returns {string} JWT token
  */
 function issueToken(roomCode, playerName, socketId) {
+    // NOTE: do NOT manually set `iat` — jsonwebtoken sets it automatically in seconds.
+    // A manual iat in milliseconds would create a conflicting duplicate claim.
     return jwt.sign(
-        { roomCode, playerName, socketId, iat: Date.now() },
+        { roomCode, playerName, socketId },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
     );

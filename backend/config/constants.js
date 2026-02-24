@@ -102,6 +102,11 @@ const SERVER_EVENTS = {
     SYNC_FULL_STATE: 'sync_full_state',
     NEW_MESSAGE: 'new_message',
     DETECTIVE_RESULT: 'detective_result',
+    ACTION_CONFIRMED: 'action_confirmed',
+    HOST_TRANSFERRED: 'host_transferred',
+    MAFIA_TEAM: 'mafia_team',
+    MAFIA_TARGET_UPDATED: 'mafia_target_updated',
+    AUTH_TOKEN: 'auth_token',
     ERROR: 'error'
 };
 

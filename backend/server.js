@@ -96,21 +96,16 @@ app.get('/api/room/:code', (req, res) => {
 app.get('/api/stats', async (req, res) => {
   try {
     const activeRooms = roomManager.getRoomCount();
-    const activePlayers = Array.from(
-      require('./services/room-manager').getRoomCount
-        ? [activeRooms]
-        : []
-    ).length; // simplified — computed below
 
-    // Count connected players across all rooms
-    const { rooms: _rooms } = (() => {
-      // Access via room-manager (rooms is internal — use workaround via getRoomCount)
-      return { rooms: [] };
-    })();
-
+    // Count unique connected sockets across all live game rooms
     let onlinePlayers = 0;
-    // Simple approximation: count players in all live rooms via stats
-    // (We don't expose the internal Map — this is a best-effort stat)
+    if (io.sockets.adapter.rooms) {
+      for (const [, sockets] of io.sockets.adapter.rooms) {
+        // Socket.IO also creates a room per socket id — skip those (size === 1 & key is a socket id)
+        // Real rooms have codes like 'ABCD1234' (length 8)
+        if (sockets.size > 1) onlinePlayers += sockets.size;
+      }
+    }
 
     const gamesCompleted = isDbConnected()
       ? await GameHistoryDoc.countDocuments()
@@ -118,7 +113,7 @@ app.get('/api/stats', async (req, res) => {
 
     res.json({
       activeRooms,
-      onlinePlayers,    // Phase 4: improve with socket.io room size API
+      onlinePlayers,
       gamesCompleted,
       dbConnected: isDbConnected(),
       uptime: Math.floor(process.uptime())

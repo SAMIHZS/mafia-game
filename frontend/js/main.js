@@ -106,8 +106,8 @@
             GameUI.showRoleReveal(roleData);
             navigateTo('roleReveal');
 
-            // Countdown display
-            let countdown = parseInt(document.getElementById('role-countdown')?.textContent?.match(/\d+/)?.[0]) || 3;
+            // SF-F1: Use a static fallback if not provided, but server controls this generally
+            let countdown = 3;
             const cdEl = document.getElementById('role-countdown');
             const timer = setInterval(() => {
                 if (cdEl) cdEl.textContent = `Game starts in ${Math.max(0, countdown)} second${countdown !== 1 ? 's' : ''}...`;
@@ -234,38 +234,55 @@
         // ── sync_full_state (rejoin) ──────────────────────────────────────────
         socket.on('sync_full_state', (data) => {
             AppState.roomCode = data.roomId;
+            AppState.mySocketId = data.playerId;
             AppState.isHost = data.isHost;
             AppState.gameState = data.gameState;
             AppState.players = data.players || [];
-            AppState.mySocketId = data.playerId;
-            if (data.myRole) AppState.myRole = data.myRole;
+            AppState.myRole = data.myRole;
 
-            // Restore appropriate page
-            switch (data.gameState) {
-                case 'WAITING_LOBBY': updateWaitingRoom(); navigateTo('waitingRoom'); break;
-                case 'NIGHT_PHASE':
-                    navigateTo('game');
-                    setBannerPhase('night');
-                    Utils.setText('game-phase-label', '🌙 NIGHT PHASE');
-                    GameUI.startTimer('game-phase-timer', data.timeLeft);
-                    showNightPanel();
-                    updateGamePlayerGrid(false);
-                    break;
-                case 'DAY_PHASE':
-                    navigateTo('game');
-                    setBannerPhase('day');
-                    Utils.setText('game-phase-label', '☀️ DAY PHASE');
-                    GameUI.startTimer('game-phase-timer', data.timeLeft);
-                    Utils.setVisible('day-vote-panel', true);
-                    Utils.setVisible('chat-panel', true);
-                    Utils.setVisible('vote-tally-container', true);
-                    updateGamePlayerGrid(true);
-                    break;
-                case 'GAME_OVER':
-                    navigateTo('gameOver');
-                    break;
+            if (data.gameState === 'WAITING_LOBBY') {
+                updateWaitingRoom();
+                navigateTo('waitingRoom');
+            } else if (data.gameState === 'GAME_OVER') {
+                navigateTo('gameOver');
+            } else {
+                updateGamePlayerGrid(false);
+                navigateTo('game');
+
+                if (data.gameState === 'NIGHT_PHASE') {
+                    document.getElementById('game-phase-label').textContent = '🌙 NIGHT PHASE';
+                    document.getElementById('game-phase-instruction').textContent = 'The town sleeps...';
+                    document.getElementById('game-phase-banner').className = 'phase-banner night';
+                    document.getElementById('day-vote-panel').classList.add('hidden');
+                    document.getElementById('vote-tally-container').classList.add('hidden');
+                    document.getElementById('chat-panel').classList.add('hidden');
+
+                    if (AppState.myRole && AppState.myRole.role !== 'VILLAGER' && AppState.players.find(p => p.socketId === AppState.mySocketId)?.alive) {
+                        document.getElementById('night-action-panel').classList.remove('hidden');
+                        document.getElementById('action-confirmed').classList.add('hidden');
+                        showNightPanel(AppState.myRole.role);
+                    } else if (AppState.players.find(p => p.socketId === AppState.mySocketId)?.alive) {
+                        document.getElementById('night-action-panel').classList.remove('hidden');
+                        showNightPanel('VILLAGER');
+                    }
+                } else if (data.gameState === 'DAY_PHASE') {
+                    document.getElementById('game-phase-label').textContent = '☀️ DAY PHASE';
+                    document.getElementById('game-phase-instruction').textContent = 'Discuss and vote';
+                    document.getElementById('game-phase-banner').className = 'phase-banner day';
+                    document.getElementById('night-action-panel').classList.add('hidden');
+
+                    if (AppState.players.find(p => p.socketId === AppState.mySocketId)?.alive) {
+                        document.getElementById('day-vote-panel').classList.remove('hidden');
+                        document.getElementById('btn-cast-vote').disabled = true;
+                        document.getElementById('vote-confirmed').classList.add('hidden');
+                    }
+                    document.getElementById('vote-tally-container').classList.remove('hidden');
+                    document.getElementById('chat-panel').classList.remove('hidden');
+                }
+
+                GameUI.startPhaseTimer(data.timeLeft);
             }
-            Utils.showToast('Reconnected and synced!', 'success', 3000);
+            Utils.showToast('Reconnected and synced!', 'success', 2000);
         });
 
         // ── game_over ─────────────────────────────────────────────────────────

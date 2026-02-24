@@ -123,7 +123,7 @@ function startNightPhase(room, io) {
             const mafiaTeam = room.getAlivePlayers()
                 .filter(p => p.role === ROLES.MAFIA && p.socketId !== player.socketId)
                 .map(p => ({ name: p.name, socketId: p.socketId }));
-            io.to(player.socketId).emit('mafia_team', { teammates: mafiaTeam });
+            io.to(player.socketId).emit(SERVER_EVENTS.MAFIA_TEAM, { teammates: mafiaTeam });
         }
     });
 

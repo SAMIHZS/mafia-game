@@ -83,7 +83,7 @@ function registerSocketEvents(io, roomManager) {
 
                 // Issue JWT for secure rejoin
                 const token = auth.issueToken(room.roomId, player.name, socket.id);
-                socket.emit('auth_token', { token });
+                socket.emit(SERVER_EVENTS.AUTH_TOKEN, { token });
 
                 socket.to(room.roomId).emit(SERVER_EVENTS.PLAYER_JOINED, {
                     name: player.name,
@@ -143,13 +143,13 @@ function registerSocketEvents(io, roomManager) {
                 room.addNightAction('kill', targetId);
                 player.setNightAction(targetId);
 
-                socket.emit('action_confirmed', { message: `🎯 Kill submitted for ${target.name}. Waiting for dawn...` });
+                socket.emit(SERVER_EVENTS.ACTION_CONFIRMED, { message: `🎯 Kill submitted for ${target.name}. Waiting for dawn...` });
 
                 // Notify other Mafia members of the chosen target
                 room.getAlivePlayers()
                     .filter(p => p.role === ROLES.MAFIA && p.socketId !== socket.id)
                     .forEach(mafioso => {
-                        io.to(mafioso.socketId).emit('mafia_target_updated', {
+                        io.to(mafioso.socketId).emit(SERVER_EVENTS.MAFIA_TARGET_UPDATED, {
                             targetName: target.name,
                             chosenBy: player.name
                         });
@@ -188,7 +188,7 @@ function registerSocketEvents(io, roomManager) {
                 room.addNightAction('detective', targetId);
                 player.setNightAction(targetId);
 
-                socket.emit('action_confirmed', { message: `🔍 Investigation submitted. Results at dawn...` });
+                socket.emit(SERVER_EVENTS.ACTION_CONFIRMED, { message: `🔍 Investigation submitted. Results at dawn...` });
 
                 gameLogic.tryEarlyNightResolution(room, io);
 
@@ -221,7 +221,7 @@ function registerSocketEvents(io, roomManager) {
                 room.addNightAction('save', targetId);
                 player.setNightAction(targetId);
 
-                socket.emit('action_confirmed', { message: `💊 Protection granted to ${target.name}. Sleep tight...` });
+                socket.emit(SERVER_EVENTS.ACTION_CONFIRMED, { message: `💊 Protection granted to ${target.name}. Sleep tight...` });
 
                 gameLogic.tryEarlyNightResolution(room, io);
 
@@ -245,19 +245,22 @@ function registerSocketEvents(io, roomManager) {
 
                 const result = voteCounter.castVote(room, socket.id, targetId);
 
-                // Broadcast updated tally (NOT individual who voted for whom)
+                // Broadcast anonymous tally only — never reveal who voted for whom
                 io.to(room.roomId).emit(SERVER_EVENTS.VOTE_UPDATED, {
-                    tally: result.tally,
-                    voterName: result.voterName,
-                    targetName: result.targetName
+                    tally: result.tally
                 });
 
-                // Early day resolution if all alive players have voted
+                // Early day resolution if all alive players have voted.
+                // 500ms delay lets clients render the final tally before phase changes.
                 const alivePlayers = room.getAlivePlayers();
                 const allVoted = alivePlayers.every(p => p.hasVoted);
                 if (allVoted) {
                     logger.info(`All players voted — resolving day early: ${room.roomId}`);
-                    gameLogic.resolveDayPhase(room, io);
+                    setTimeout(() => {
+                        if (room.gameState === GAME_PHASES.DAY_PHASE) {
+                            gameLogic.resolveDayPhase(room, io);
+                        }
+                    }, 500);
                 }
 
             } catch (err) {
@@ -280,9 +283,9 @@ function registerSocketEvents(io, roomManager) {
                 // Only alive players can chat during day phase
                 // Dead players message is blocked (Phase 3: add dead-chat channel)
                 if (!player.alive) return socket.emit(SERVER_EVENTS.ERROR, { message: 'Dead players cannot speak' });
-                if (room.gameState !== GAME_PHASES.DAY_PHASE &&
-                    room.gameState !== GAME_PHASES.WAITING_LOBBY) {
-                    return socket.emit(SERVER_EVENTS.ERROR, { message: 'Chat is only available during the day' });
+                // Chat is only available during the day phase (not lobby, not night, not game over)
+                if (room.gameState !== GAME_PHASES.DAY_PHASE) {
+                    return socket.emit(SERVER_EVENTS.ERROR, { message: 'Chat is only available during the day phase' });
                 }
 
                 const { text } = data || {};
@@ -370,7 +373,7 @@ function registerSocketEvents(io, roomManager) {
 
                 // Issue fresh JWT
                 const newToken = auth.issueToken(room.roomId, player.name, socket.id);
-                socket.emit('auth_token', { token: newToken });
+                socket.emit(SERVER_EVENTS.AUTH_TOKEN, { token: newToken });
 
                 // Full state sync
                 const ROLE_DESCRIPTIONS = require('./constants').ROLE_DESCRIPTIONS;
@@ -458,7 +461,7 @@ function handleLeave(socket, io, roomManager, explicit = true) {
     if (player.isHost && room.players.size > 0) {
         const newHost = room.transferHost();
         if (newHost) {
-            io.to(room.roomId).emit('host_transferred', {
+            io.to(room.roomId).emit(SERVER_EVENTS.HOST_TRANSFERRED, {
                 newHostId: newHost.socketId,
                 newHostName: newHost.name,
                 players: room.getPlayers().map(p => p.toPublicJSON())

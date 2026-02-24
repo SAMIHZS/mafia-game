@@ -95,7 +95,10 @@
     });
 
     // ─── Debug: log all events in development ─────────────────────
-    if (window.__MAFIA_CONFIG__?.debug || localStorage.getItem('mafia_debug') === 'true') {
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const forceDebug = isDev && localStorage.getItem('mafia_debug') === 'true';
+
+    if (window.__MAFIA_CONFIG__?.debug || forceDebug) {
         socket.onAny((event, ...args) => {
             console.log(`[Socket] ← ${event}`, args);
         });
