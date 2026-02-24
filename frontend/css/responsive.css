@@ -1,0 +1,141 @@
+/* ============================================================
+   Mafia Game - Responsive Styles (responsive.css)
+   Mobile-first breakpoints
+   ============================================================ */
+
+/* ─── Mobile (<640px) ───────────────────────────────────────── */
+@media (max-width: 639px) {
+    .app-container {
+        padding: var(--space-sm);
+    }
+
+    .card {
+        padding: var(--space-md);
+    }
+
+    /* Stack buttons vertically on small screens */
+    .home-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .home-actions .btn {
+        width: 100%;
+    }
+
+    .btn-row {
+        flex-direction: column;
+    }
+
+    .btn-row .btn {
+        width: 100%;
+    }
+
+    /* Player grid: 2 columns on mobile */
+    .player-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Waiting room header stacks */
+    .waiting-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    /* Stats grid: 1 col */
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Toast snaps to top */
+    .toast-container {
+        top: var(--space-sm);
+        right: var(--space-sm);
+        left: var(--space-sm);
+    }
+
+    .toast {
+        max-width: 100%;
+    }
+
+    .modal-footer {
+        flex-direction: column;
+    }
+
+    .modal-footer .btn {
+        width: 100%;
+    }
+
+    /* Room code: smaller on mobile */
+    .room-code-display {
+        font-size: clamp(22px, 7vw, 36px);
+        letter-spacing: 0.12em;
+    }
+}
+
+/* ─── Tablet (640px–1023px) ──────────────────────────────────── */
+@media (min-width: 640px) and (max-width: 1023px) {
+    .app-container {
+        max-width: 768px;
+    }
+
+    .player-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .home-actions {
+        flex-direction: row;
+        justify-content: center;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* ─── Desktop (≥1024px) ──────────────────────────────────────── */
+@media (min-width: 1024px) {
+    .player-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
+
+    /* Two-column layout for game screen */
+    .game-layout {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+
+    .game-sidebar {
+        width: 280px;
+        flex-shrink: 0;
+    }
+
+    .game-main {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+/* ─── Landscape Mobile ──────────────────────────────────────── */
+@media (max-width: 768px) and (orientation: landscape) {
+    .home-hero {
+        min-height: 50vh;
+        padding: var(--space-lg) var(--space-md);
+    }
+
+    .role-reveal-page {
+        min-height: 50vh;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+}
+
+/* ─── Print ──────────────────────────────────────────────────── */
+@media print {
+
+    .toast-container,
+    .connection-status,
+    .modal-overlay {
+        display: none !important;
+    }
+}
