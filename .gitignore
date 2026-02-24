@@ -34,3 +34,4 @@ build/
 
 # ─── Antigravity brain (AI assistant artifacts) ──────────────────
 .gemini/
+.vercel
