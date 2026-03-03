@@ -156,8 +156,10 @@
 
     <script>
         window.__MAFIA_CONFIG__ = {
-            backendUrl: 'http://localhost:3001',
-            debug: true
+            backendUrl: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+                ? 'http://localhost:3001'
+                : 'https://mafia-game-backend-production.up.railway.app',
+            debug: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         };
     </script>
 
