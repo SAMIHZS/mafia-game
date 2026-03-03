@@ -1,0 +1,1 @@
+mongodb+srv://samihzs249_db_user:PbRYIgVSHQoM2N72@cluster0.m6cumbq.mongodb.net/mafia?retryWrites=true&w=majority&appName=Cluster0
