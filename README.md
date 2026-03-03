@@ -123,9 +123,5 @@ http://localhost:8080
 
 - [x] Phase 1 — Scaffold (rooms, joining, waiting room)
 - [x] Phase 2 — Full game loop (night/day, actions, win conditions)
-- [ ] Phase 3 — MongoDB persistence, JWT auth, QR codes
-- [ ] Phase 4 — Mobile app (React Native)
+- [x] Phase 3 — MongoDB persistence, JWT auth, QR codes
 
-## 📄 License
-
-MIT
