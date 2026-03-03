@@ -9,6 +9,7 @@
  */
 
 const { ROLES } = require('../config/constants');
+const crypto = require('crypto');
 
 class Player {
     /**
@@ -18,6 +19,7 @@ class Player {
      */
     constructor(socketId, name, isHost = false) {
         this.socketId = socketId;
+        this.playerId = crypto.randomBytes(4).toString('hex'); // opaque public ID
         this.name = name.trim();
         this.isHost = isHost;
 
@@ -47,7 +49,8 @@ class Player {
      */
     toPublicJSON() {
         return {
-            socketId: this.socketId,
+            playerId: this.playerId,
+            socketId: this.socketId,  // TODO: Phase 4 — remove once frontend migrated fully to playerId
             name: this.name,
             isHost: this.isHost,
             alive: this.alive,

@@ -9,7 +9,7 @@
  */
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-const CURRENT_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL] ?? LOG_LEVELS.debug;
+const CURRENT_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL] ?? LOG_LEVELS.info;
 
 function timestamp() {
     return new Date().toISOString();

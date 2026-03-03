@@ -23,10 +23,12 @@ const socketToRoom = new Map();
 // ─── Room Code Generation ─────────────────────────────────────────────────────
 
 function generateRoomCode() {
+    const crypto = require('crypto');
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const bytes = crypto.randomBytes(ROOM_SETTINGS.ROOM_CODE_LENGTH);
     let code = '';
     for (let i = 0; i < ROOM_SETTINGS.ROOM_CODE_LENGTH; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
+        code += chars.charAt(bytes[i] % chars.length);
     }
     return code;
 }

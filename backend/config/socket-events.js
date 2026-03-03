@@ -21,22 +21,59 @@ const {
     ROOM_SETTINGS
 } = require('./constants');
 
-// ─── Rate Limiting ────────────────────────────────────────────────────────────
-const joinAttempts = new Map();
-const JOIN_RATE_LIMIT = 10;
+// ─── Per-Event Rate Limiting ──────────────────────────────────────────────────
+const rateLimitStore = new Map();  // ip → { event → { count, resetAt } }
 
-function checkRateLimit(ip) {
+const RATE_LIMITS = {
+    join_room: { max: 5, windowMs: 60000 },
+    player_message: { max: 30, windowMs: 60000 },
+    cast_vote: { max: 5, windowMs: 60000 },
+    mafia_kill: { max: 3, windowMs: 60000 },
+    detective_check: { max: 3, windowMs: 60000 },
+    doctor_save: { max: 3, windowMs: 60000 },
+    start_game: { max: 3, windowMs: 60000 },
+    leave_room: { max: 5, windowMs: 60000 },
+    rejoin_room: { max: 5, windowMs: 60000 },
+    _global: { max: 100, windowMs: 60000 }
+};
+
+function checkEventRateLimit(ip, eventName) {
     const now = Date.now();
-    const window = 60 * 1000;
-    const entry = joinAttempts.get(ip) || { count: 0, resetAt: now + window };
+    if (!rateLimitStore.has(ip)) rateLimitStore.set(ip, {});
+    const ipStore = rateLimitStore.get(ip);
 
-    if (now > entry.resetAt) {
-        entry.count = 0;
-        entry.resetAt = now + window;
-    }
+    // Check per-event limit
+    const limit = RATE_LIMITS[eventName] || RATE_LIMITS._global;
+    const entry = ipStore[eventName] || { count: 0, resetAt: now + limit.windowMs };
+    if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + limit.windowMs; }
     entry.count++;
-    joinAttempts.set(ip, entry);
-    return entry.count <= JOIN_RATE_LIMIT;
+    ipStore[eventName] = entry;
+    if (entry.count > limit.max) return false;
+
+    // Check global limit
+    const gEntry = ipStore._global || { count: 0, resetAt: now + RATE_LIMITS._global.windowMs };
+    if (now > gEntry.resetAt) { gEntry.count = 0; gEntry.resetAt = now + RATE_LIMITS._global.windowMs; }
+    gEntry.count++;
+    ipStore._global = gEntry;
+    return gEntry.count <= RATE_LIMITS._global.max;
+}
+
+// Cleanup expired entries every 5 minutes to prevent memory leaks
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, store] of rateLimitStore.entries()) {
+        let allExpired = true;
+        for (const [event, entry] of Object.entries(store)) {
+            if (now > entry.resetAt) delete store[event];
+            else allExpired = false;
+        }
+        if (allExpired) rateLimitStore.delete(ip);
+    }
+}, 300000);
+
+// ─── HTML Escape (XSS prevention) ─────────────────────────────────────────────
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ─── Main Registration ────────────────────────────────────────────────────────
@@ -46,6 +83,15 @@ function checkRateLimit(ip) {
  * @param {import('../services/room-manager')} roomManager
  */
 function registerSocketEvents(io, roomManager) {
+
+    // ── Socket.IO Authentication Middleware ────────────────────────────────────
+    io.use((socket, next) => {
+        const ip = socket.handshake.address;
+        if (!checkEventRateLimit(ip, '_global')) {
+            return next(new Error('Rate limited. Try again later.'));
+        }
+        next();
+    });
 
     io.on('connection', (socket) => {
         logger.info(`Socket connected: ${socket.id} (${socket.handshake.address})`);
@@ -57,7 +103,7 @@ function registerSocketEvents(io, roomManager) {
             try {
                 const { code, name } = data || {};
 
-                if (!checkRateLimit(socket.handshake.address)) {
+                if (!checkEventRateLimit(socket.handshake.address, 'join_room')) {
                     return socket.emit(SERVER_EVENTS.ERROR, { message: 'Too many join attempts. Wait 1 minute.' });
                 }
 
@@ -288,14 +334,19 @@ function registerSocketEvents(io, roomManager) {
                     return socket.emit(SERVER_EVENTS.ERROR, { message: 'Chat is only available during the day phase' });
                 }
 
+                // Per-event rate limit for chat
+                if (!checkEventRateLimit(socket.handshake.address, 'player_message')) {
+                    return socket.emit(SERVER_EVENTS.ERROR, { message: 'Slow down! Too many messages.' });
+                }
+
                 const { text } = data || {};
                 if (!text || typeof text !== 'string') return socket.emit(SERVER_EVENTS.ERROR, { message: 'Message is required' });
 
-                const sanitized = text.trim().slice(0, 200); // max 200 chars
+                const sanitized = escapeHtml(text.trim().slice(0, 200)); // max 200 chars, HTML escaped
                 if (sanitized.length === 0) return;
 
                 io.to(room.roomId).emit(SERVER_EVENTS.NEW_MESSAGE, {
-                    from: player.name,
+                    from: escapeHtml(player.name),
                     text: sanitized,
                     timestamp: Date.now()
                 });
@@ -334,9 +385,8 @@ function registerSocketEvents(io, roomManager) {
                         return socket.emit(SERVER_EVENTS.ERROR, { message: 'Session expired. Please rejoin manually.' });
                     }
                 } else {
-                    // Fallback: legacy name-based rejoin
-                    roomCode = data?.roomCode?.toUpperCase();
-                    playerName = data?.playerName;
+                    // Legacy name-based rejoin removed — JWT required for security
+                    return socket.emit(SERVER_EVENTS.ERROR, { message: 'Session token required. Please rejoin manually.' });
                 }
 
                 if (!roomCode || !playerName) {
