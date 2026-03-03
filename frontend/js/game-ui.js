@@ -22,44 +22,79 @@ const GameUI = (function () {
         if (!container) return;
         container.innerHTML = '';
 
+        const isWaitingRoom = container.id === 'waiting-player-grid';
+
         players.forEach(player => {
             const isSelf = player.socketId === mySocketId;
             const isDead = !player.alive;
 
             const card = document.createElement('div');
-            card.className = [
-                'player-card',
-                isSelf ? 'self' : '',
-                isDead ? 'dead' : '',
-                options.clickable && !isDead && !isSelf ? 'clickable' : ''
-            ].join(' ').trim();
 
-            card.dataset.socketId = player.socketId;
+            if (isWaitingRoom) {
+                // Screen 4 styled list item
+                card.className = "flex items-center gap-3 bg-background-dark p-3 rounded-lg border border-surface-border group transition-colors";
+                if (isSelf) card.classList.add("border-primary/30");
 
-            // Avatar with initials
-            const avatar = document.createElement('div');
-            avatar.className = 'player-avatar';
-            avatar.textContent = Utils.getInitials(player.name);
+                const initials = Utils.getInitials(player.name);
 
-            // Name
-            const name = document.createElement('div');
-            name.className = 'player-name truncate';
-            name.textContent = player.name + (isSelf ? ' (You)' : '');
+                let markup = `
+                    <div class="w-10 h-10 rounded-full bg-surface-dark flex items-center justify-center border border-white/5 transition-colors relative">
+                        <span class="text-text-subtle font-bold">${initials}</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-white font-bold text-sm truncate">${player.name}${isSelf ? ' (You)' : ''}</span>
+                        <span class="text-primary text-xs font-bold tracking-widest uppercase">${player.isHost ? 'Host' : 'Ready'}</span>
+                    </div>
+                `;
+                card.innerHTML = markup;
+            } else {
+                // Screen 5/6 styled card
+                card.className = "player-card relative w-full aspect-[3/4] rounded-xl bg-surface-dark border shadow-lg overflow-hidden flex flex-col group transition-all duration-300";
 
-            // Status
-            const status = document.createElement('div');
-            status.className = `player-status ${isDead ? 'status-dead' : 'status-alive'}`;
-            status.textContent = isDead ? '❌ Dead' : (player.isHost ? '👑 Host' : '✅ Alive');
+                if (isSelf) card.classList.add("border-primary", "shadow-[0_0_15px_rgba(242,13,13,0.2)]");
+                else if (options.clickable && !isDead) card.classList.add("border-surface-border", "hover:border-primary/50", "cursor-pointer");
+                else card.classList.add("border-surface-border");
 
-            card.append(avatar, name, status);
+                if (isDead) card.classList.add("opacity-50", "grayscale");
 
-            if (options.clickable && !isDead && !isSelf) {
-                card.addEventListener('click', () => {
-                    // Deselect all
-                    container.querySelectorAll('.player-card').forEach(c => c.classList.remove('selected'));
-                    card.classList.add('selected');
-                    if (options.onPlayerClick) options.onPlayerClick(player);
-                });
+                card.dataset.socketId = player.socketId;
+
+                const aliveColorClass = isDead ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" : "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]";
+                const initials = Utils.getInitials(player.name);
+
+                let markup = `
+                    <!-- Alive Badge -->
+                    <div class="absolute top-2 right-2 w-3 h-3 rounded-full ${aliveColorClass} z-10"></div>
+                    
+                    <!-- Avatar Area -->
+                    <div class="flex-grow bg-background-dark/50 flex items-center justify-center relative overflow-hidden avatar-area">
+                        <div class="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,transparent_70%)] opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <span class="text-4xl text-text-subtle group-hover:text-white transition-colors duration-300 font-bold tracking-tighter">${initials}</span>
+                    </div>
+                    
+                    <!-- Player Info -->
+                    <div class="h-16 bg-surface-dark border-t border-surface-border flex flex-col justify-center px-3 z-10 shrink-0">
+                        <p class="text-white font-bold text-sm truncate uppercase tracking-wider">${player.name}${isSelf ? ' (You)' : ''}</p>
+                        <p class="${isDead ? 'text-red-500' : 'text-primary'} text-xs font-bold uppercase tracking-widest">${isDead ? 'Dead' : (player.isHost ? 'Host' : 'Alive')}</p>
+                    </div>
+
+                    <!-- Selected Overlay -->
+                    <div class="selected-overlay hidden absolute inset-0 bg-primary/20 border-2 border-primary rounded-xl z-20 pointer-events-none">
+                        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary rounded-full w-10 h-10 flex items-center justify-center text-white shadow-lg">
+                            <span class="material-symbols-outlined">check</span>
+                        </div>
+                    </div>
+                `;
+                card.innerHTML = markup;
+
+                if (options.clickable && !isDead && !isSelf) {
+                    card.addEventListener('click', () => {
+                        // Deselect all
+                        container.querySelectorAll('.player-card').forEach(c => c.querySelector('.selected-overlay').classList.add('hidden'));
+                        card.querySelector('.selected-overlay').classList.remove('hidden');
+                        if (options.onPlayerClick) options.onPlayerClick(player);
+                    });
+                }
             }
 
             container.appendChild(card);
@@ -84,12 +119,19 @@ const GameUI = (function () {
 
         function tick() {
             if (!el) return;
-            el.textContent = remaining;
-            // Color-code urgency
-            el.className = 'phase-timer ' + (
-                remaining > 10 ? 'ok' :
-                    remaining > 3 ? 'warning' : 'urgent'
-            );
+            // Format time as MM:SS if we want, but old format is just seconds. Let's keep seconds for compatibility
+            el.textContent = remaining < 10 ? `00:0${remaining}` : `00:${remaining}`;
+
+            // Color-code urgency with Tailwind
+            el.classList.remove('text-white', 'text-amber-500', 'text-primary', 'animate-pulse');
+
+            if (remaining > 10) {
+                el.classList.add('text-white');
+            } else if (remaining > 5) {
+                el.classList.add('text-amber-500');
+            } else {
+                el.classList.add('text-primary', 'animate-pulse');
+            }
 
             if (remaining <= 0) {
                 stopTimer();
@@ -119,53 +161,27 @@ const GameUI = (function () {
      * @param {Array} players - Array of player public objects
      */
     function renderVoteTally(container, tally, players) {
-        if (!container) return;
+        // We now ignore the container and plot votes directly on the player grid avatars
+        const grid = document.getElementById('game-player-grid');
+        if (!grid) return;
 
-        const playerMap = {};
-        players.forEach(p => { playerMap[p.socketId] = p; });
+        // Clear existing vote badges
+        grid.querySelectorAll('.vote-badge').forEach(el => el.remove());
 
-        const maxVotes = Math.max(1, ...Object.values(tally));
-
-        container.innerHTML = '';
-        const title = document.createElement('div');
-        title.className = 'vote-tally-title';
-        title.textContent = '📊 Current Votes';
-        container.appendChild(title);
-
-        if (Object.keys(tally).length === 0) {
-            const empty = document.createElement('div');
-            empty.textContent = 'No votes yet';
-            empty.style.color = '#9ca3af';
-            empty.style.fontSize = 'var(--size-small)';
-            container.appendChild(empty);
-            return;
-        }
-
-        // Sort by votes descending
-        const sorted = Object.entries(tally).sort(([, a], [, b]) => b - a);
-
-        sorted.forEach(([sid, count]) => {
-            const player = playerMap[sid];
-            if (!player) return;
-
-            const row = document.createElement('div');
-            row.className = 'vote-bar-row';
-
-            const label = document.createElement('div');
-            label.className = 'vote-bar-label truncate';
-            label.textContent = player.name;
-
-            const bar = document.createElement('div');
-            bar.className = 'vote-bar-fill';
-            bar.style.width = `${(count / maxVotes) * 100}%`;
-            bar.style.maxWidth = '200px';
-
-            const countEl = document.createElement('div');
-            countEl.className = 'vote-bar-count';
-            countEl.textContent = `${count} vote${count !== 1 ? 's' : ''}`;
-
-            row.append(label, bar, countEl);
-            container.appendChild(row);
+        // Add new badges for players with votes
+        Object.entries(tally).forEach(([sid, count]) => {
+            if (count > 0) {
+                const card = grid.querySelector(`.player-card[data-socket-id="${sid}"]`);
+                if (card) {
+                    const avatar = card.querySelector('.avatar-area');
+                    if (avatar) {
+                        const badge = document.createElement('div');
+                        badge.className = 'vote-badge absolute top-2 left-2 bg-amber-500 text-white font-bold rounded-full w-8 h-8 flex items-center justify-center border-2 border-surface-dark shadow-[0_0_10px_rgba(245,158,11,0.5)] z-20';
+                        badge.textContent = count;
+                        avatar.appendChild(badge);
+                    }
+                }
+            }
         });
     }
 
@@ -185,12 +201,19 @@ const GameUI = (function () {
         const desc = document.getElementById('role-reveal-desc');
         const team = document.getElementById('role-reveal-team');
 
-        if (icon) icon.textContent = roleData.icon || '🎭';
+        if (icon) icon.textContent = roleData.icon || '❓';
         if (name) name.textContent = roleData.label || roleData.role;
         if (desc) desc.textContent = roleData.description || '';
         if (team) {
-            team.textContent = `Team: ${roleData.team === 'MAFIA' ? '🔴 Mafia' : '🔵 Villagers'}`;
-            team.style.color = roleData.team === 'MAFIA' ? 'var(--color-mafia)' : 'var(--color-primary)';
+            team.innerHTML = `<span class="material-symbols-outlined text-sm">group</span> ${roleData.team === 'MAFIA' ? 'Mafia' : 'Villagers'}`;
+            // Remove previous color classes
+            team.classList.remove('text-primary', 'text-blue-400', 'bg-primary/20', 'bg-blue-400/20', 'border-primary/30', 'border-blue-400/30');
+
+            if (roleData.team === 'MAFIA') {
+                team.classList.add('text-primary', 'bg-primary/20', 'border-primary/30');
+            } else {
+                team.classList.add('text-blue-400', 'bg-blue-400/20', 'border-blue-400/30');
+            }
         }
     }
 

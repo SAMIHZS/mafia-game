@@ -124,8 +124,6 @@
             AppState.players = data.alivePlayers || AppState.players;
             navigateTo('game');
             setBannerPhase('night');
-            Utils.setText('game-phase-label', '🌙 NIGHT PHASE');
-            Utils.setText('game-phase-instruction', 'The town sleeps...');
             GameUI.startTimer('game-phase-timer', data.timeLeft);
 
             // Show role-specific night panel
@@ -133,8 +131,6 @@
 
             // Hide day-only UI
             Utils.setVisible('day-vote-panel', false);
-            Utils.setVisible('vote-tally-container', false);
-            Utils.setVisible('chat-panel', false);
             Utils.setVisible('death-announcement', false);
 
             updateGamePlayerGrid(false);
@@ -149,8 +145,6 @@
             AppState.players = data.players || AppState.players;
             navigateTo('game');
             setBannerPhase('day');
-            Utils.setText('game-phase-label', '☀️ DAY PHASE — Round ' + data.round);
-            Utils.setText('game-phase-instruction', 'Discuss and vote to eliminate a suspect!');
             GameUI.startTimer('game-phase-timer', data.timeLeft);
 
             // Death announcement
@@ -161,16 +155,14 @@
 
             // Show day UI
             Utils.setVisible('day-vote-panel', true);
-            Utils.setVisible('vote-tally-container', true);
-            Utils.setVisible('chat-panel', true);
 
             // Reset vote UI
-            document.getElementById('btn-cast-vote').disabled = true;
+            const castBtn = document.getElementById('btn-cast-vote');
+            if (castBtn) castBtn.disabled = true;
             Utils.setVisible('vote-confirmed', false);
 
-            // Reset vote tally
-            const tally = document.getElementById('vote-tally-container');
-            if (tally) GameUI.renderVoteTally(tally, {}, AppState.players);
+            // Reset vote tally on player grid
+            GameUI.renderVoteTally(null, {}, AppState.players);
 
             // Build clickable player grid for voting
             updateGamePlayerGrid(true);
@@ -179,8 +171,7 @@
 
         // ── vote_updated ──────────────────────────────────────────────────────
         socket.on('vote_updated', (data) => {
-            const container = document.getElementById('vote-tally-container');
-            if (container) GameUI.renderVoteTally(container, data.tally, AppState.players);
+            GameUI.renderVoteTally(null, data.tally, AppState.players);
             Utils.showToast(`${data.voterName} voted for ${data.targetName}`, 'info', 2000);
         });
 
@@ -250,12 +241,15 @@
                 navigateTo('game');
 
                 if (data.gameState === 'NIGHT_PHASE') {
-                    document.getElementById('game-phase-label').textContent = '🌙 NIGHT PHASE';
+                    document.getElementById('game-phase-label').textContent = 'NIGHT PHASE';
+                    document.getElementById('game-phase-label').className = 'text-blue-500 font-bold text-lg uppercase tracking-widest';
                     document.getElementById('game-phase-instruction').textContent = 'The town sleeps...';
-                    document.getElementById('game-phase-banner').className = 'phase-banner night';
+                    document.getElementById('phase-icon').textContent = 'dark_mode';
+                    document.getElementById('phase-icon').className = 'material-symbols-outlined text-blue-500 text-2xl';
+                    document.getElementById('phase-icon-container').className = 'w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20';
+                    document.getElementById('game-phase-banner').className = 'w-full bg-blue-950/40 border-b border-blue-900/40 p-4 lg:p-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-colors duration-500 shadow-lg';
+
                     document.getElementById('day-vote-panel').classList.add('hidden');
-                    document.getElementById('vote-tally-container').classList.add('hidden');
-                    document.getElementById('chat-panel').classList.add('hidden');
 
                     if (AppState.myRole && AppState.myRole.role !== 'VILLAGER' && AppState.players.find(p => p.socketId === AppState.mySocketId)?.alive) {
                         document.getElementById('night-action-panel').classList.remove('hidden');
@@ -266,9 +260,14 @@
                         showNightPanel('VILLAGER');
                     }
                 } else if (data.gameState === 'DAY_PHASE') {
-                    document.getElementById('game-phase-label').textContent = '☀️ DAY PHASE';
+                    document.getElementById('game-phase-label').textContent = 'DAY PHASE';
+                    document.getElementById('game-phase-label').className = 'text-amber-500 font-bold text-lg uppercase tracking-widest';
                     document.getElementById('game-phase-instruction').textContent = 'Discuss and vote';
-                    document.getElementById('game-phase-banner').className = 'phase-banner day';
+                    document.getElementById('phase-icon').textContent = 'light_mode';
+                    document.getElementById('phase-icon').className = 'material-symbols-outlined text-amber-500 text-2xl';
+                    document.getElementById('phase-icon-container').className = 'w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20';
+                    document.getElementById('game-phase-banner').className = 'w-full bg-surface-dark border-b border-surface-border p-4 lg:p-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-colors duration-500 shadow-lg';
+
                     document.getElementById('night-action-panel').classList.add('hidden');
 
                     if (AppState.players.find(p => p.socketId === AppState.mySocketId)?.alive) {
@@ -276,11 +275,9 @@
                         document.getElementById('btn-cast-vote').disabled = true;
                         document.getElementById('vote-confirmed').classList.add('hidden');
                     }
-                    document.getElementById('vote-tally-container').classList.remove('hidden');
-                    document.getElementById('chat-panel').classList.remove('hidden');
                 }
 
-                GameUI.startPhaseTimer(data.timeLeft);
+                GameUI.startTimer('game-phase-timer', data.timeLeft);
             }
             Utils.showToast('Reconnected and synced!', 'success', 2000);
         });
@@ -312,9 +309,13 @@
             'VILLAGER': 'panel-villager'
         };
 
-        Object.values(panels).forEach(id => Utils.setVisible(id, false));
+        Object.values(panels).forEach(id => {
+            const panelEl = document.getElementById(id);
+            if (panelEl) { panelEl.classList.add('hidden'); panelEl.classList.remove('flex'); }
+        });
         const panelId = panels[role] || 'panel-villager';
-        Utils.setVisible(panelId, true);
+        const activePanel = document.getElementById(panelId);
+        if (activePanel) { activePanel.classList.remove('hidden'); activePanel.classList.add('flex'); }
 
         // Populate target grids for special roles
         const alive = AppState.players.filter(p => p.alive);
@@ -355,8 +356,25 @@
 
     function setBannerPhase(phase) {
         const banner = document.getElementById('game-phase-banner');
+        const label = document.getElementById('game-phase-label');
+        const instruction = document.getElementById('game-phase-instruction');
+        const icon = document.getElementById('phase-icon');
+        const iconContainer = document.getElementById('phase-icon-container');
         if (!banner) return;
-        banner.className = `phase-banner ${phase}-phase`;
+
+        if (phase === 'night') {
+            banner.className = 'w-full bg-blue-950/40 border-b border-blue-900/40 p-4 lg:p-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-colors duration-500 shadow-lg';
+            if (label) { label.textContent = 'NIGHT PHASE'; label.className = 'text-blue-500 font-bold text-lg uppercase tracking-widest'; }
+            if (instruction) instruction.textContent = 'The town sleeps...';
+            if (icon) { icon.textContent = 'dark_mode'; icon.className = 'material-symbols-outlined text-blue-500 text-2xl'; }
+            if (iconContainer) iconContainer.className = 'w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20';
+        } else {
+            banner.className = 'w-full bg-surface-dark border-b border-surface-border p-4 lg:p-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-colors duration-500 shadow-lg';
+            if (label) { label.textContent = 'DAY PHASE'; label.className = 'text-amber-500 font-bold text-lg uppercase tracking-widest'; }
+            if (instruction) instruction.textContent = 'Discuss and vote to eliminate a suspect!';
+            if (icon) { icon.textContent = 'light_mode'; icon.className = 'material-symbols-outlined text-amber-500 text-2xl'; }
+            if (iconContainer) iconContainer.className = 'w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20';
+        }
     }
 
     // ─── Death Announcement ──────────────────────────────────────────────────────
@@ -365,14 +383,15 @@
         const el = document.getElementById('death-announcement');
         if (!el) return;
 
+        // Show the element
+        el.classList.remove('hidden');
+
         if (killedPlayer) {
-            Utils.setText('death-msg', `${killedPlayer.name} was killed last night!`);
-            Utils.setText('death-role', `They were the ${killedPlayer.role}`);
-            Utils.setVisible('death-announcement', true);
+            Utils.setText('death-msg', `${killedPlayer.name} was eliminated!`);
+            Utils.setText('death-role', `${killedPlayer.role}`);
         } else {
-            Utils.setText('death-msg', 'Nobody died last night! The doctor was busy...');
+            Utils.setText('death-msg', 'The night was quiet... no one died.');
             Utils.setText('death-role', '');
-            Utils.setVisible('death-announcement', true);
         }
     }
 
@@ -395,8 +414,7 @@
 
     function updateAliveCount() {
         const alive = AppState.players.filter(p => p.alive).length;
-        const total = AppState.players.length;
-        Utils.setText('alive-count', `(${alive} alive / ${total} total)`);
+        Utils.setText('alive-count', alive);
     }
 
     // ─── Chat ─────────────────────────────────────────────────────────────────────
@@ -406,12 +424,12 @@
         if (!container) return;
 
         const empty = document.getElementById('chat-empty');
-        if (empty) empty.style.display = 'none';
+        if (empty) empty.classList.add('hidden');
 
         const msg = document.createElement('div');
-        msg.style.cssText = 'margin-bottom:8px;font-size:14px;';
+        msg.className = 'mb-2 text-sm';
         const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        msg.innerHTML = `<span style="font-weight:700">${from}</span> <span style="color:#9ca3af;font-size:12px">${timeStr}</span><br/>${text}`;
+        msg.innerHTML = `<span class="font-bold text-white">${from}</span> <span class="text-text-subtle text-xs">${timeStr}</span><br/><span class="text-slate-300">${text}</span>`;
         container.appendChild(msg);
         container.scrollTop = container.scrollHeight;
     }
@@ -420,8 +438,11 @@
 
     function updateWaitingRoom() {
         Utils.setText('waiting-room-code', AppState.roomCode);
+        // Update both count elements
         const countEl = document.getElementById('waiting-player-count');
+        const countEl2 = document.getElementById('player-count');
         if (countEl) countEl.textContent = `${AppState.players.length} / 20`;
+        if (countEl2) countEl2.textContent = AppState.players.length;
 
         const grid = document.getElementById('waiting-player-grid');
         if (grid) GameUI.renderPlayerGrid(grid, AppState.players, AppState.mySocketId);
@@ -430,12 +451,18 @@
         if (startBtn) {
             const hasEnough = AppState.players.length >= 6;
             startBtn.disabled = !hasEnough;
-            startBtn.textContent = hasEnough
-                ? '▶ Start Game'
-                : `Need ${6 - AppState.players.length} more player${AppState.players.length < 5 ? 's' : ''}`;
+            if (!hasEnough) {
+                startBtn.innerHTML = `Need ${6 - AppState.players.length} more player${AppState.players.length < 5 ? 's' : ''}`;
+            } else {
+                startBtn.innerHTML = '<span class="material-symbols-outlined">play_arrow</span> Start Game';
+            }
         }
         Utils.setVisible('btn-start-game', AppState.isHost);
-        Utils.setVisible('btn-leave-room', true);
+
+        // Generate QR code for lobby sharing
+        if (AppState.roomCode && typeof window.generateRoomQR === 'function') {
+            window.generateRoomQR(AppState.roomCode);
+        }
     }
 
     // ─── Game Over ────────────────────────────────────────────────────────────────
@@ -444,11 +471,9 @@
         const winnerEl = document.getElementById('game-over-winner');
         if (winnerEl) {
             const isVillagers = data.winner === 'VILLAGERS_WIN';
-            winnerEl.textContent = isVillagers ? '🎉 Villagers Win!' : '💀 Mafia Wins!';
-            winnerEl.className = `winner-title ${isVillagers ? 'villagers' : 'mafia'}`;
+            winnerEl.textContent = isVillagers ? 'VILLAGERS WON' : 'MAFIA WON';
+            winnerEl.className = `text-5xl md:text-7xl font-black uppercase tracking-tighter drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] ${isVillagers ? 'text-blue-500' : 'text-red-500'}`;
         }
-        const winner = document.querySelector('.winner-badge');
-        if (winner) winner.textContent = data.winner === 'VILLAGERS_WIN' ? '🏆' : '💀';
 
         Utils.setText('stat-rounds', data.stats?.rounds || 0);
         Utils.setText('stat-kills', data.stats?.nightKills?.length || 0);
@@ -459,11 +484,20 @@
             tbody.innerHTML = '';
             data.players.forEach(p => {
                 const tr = document.createElement('tr');
+                tr.className = "border-b border-surface-border/50 hover:bg-white/5 transition-colors";
+
+                const roleColor = p.role === 'MAFIA' ? 'text-red-500' : 'text-primary';
+                const statusColor = p.alive ? 'text-green-500' : 'text-text-subtle';
+
                 tr.innerHTML = `
-                    <td>${Utils.getInitials(p.name)}</td>
-                    <td>${p.name}</td>
-                    <td>${p.role}</td>
-                    <td>${p.alive ? '✅ Survived' : '❌ Eliminated'}</td>
+                    <td class="p-4 text-center">
+                        <div class="w-8 h-8 rounded-full bg-surface-dark flex items-center justify-center border border-white/10 mx-auto">
+                            <span class="text-xs font-bold text-text-subtle">${Utils.getInitials(p.name)}</span>
+                        </div>
+                    </td>
+                    <td class="p-4 font-bold text-white">${p.name}</td>
+                    <td class="p-4 font-bold ${roleColor} tracking-widest uppercase text-xs">${p.role}</td>
+                    <td class="p-4 text-right font-bold tracking-widest uppercase text-xs ${statusColor}">${p.alive ? 'Survived' : 'Eliminated'}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -582,6 +616,51 @@
             RoomManager.leaveRoom();
             navigateTo('home');
         });
+
+        // QR toggle panel
+        document.getElementById('btn-toggle-qr')?.addEventListener('click', () => {
+            const panel = document.getElementById('waiting-qr-panel');
+            const icon = document.getElementById('qr-toggle-icon');
+            if (panel) {
+                panel.classList.toggle('hidden');
+                if (icon) icon.style.transform = panel.classList.contains('hidden') ? '' : 'rotate(180deg)';
+            }
+        });
+
+        // Copy room link
+        document.getElementById('btn-copy-link')?.addEventListener('click', async () => {
+            const linkInput = document.getElementById('waiting-room-link');
+            if (linkInput?.value) {
+                const ok = await Utils.copyToClipboard(linkInput.value);
+                const btn = document.getElementById('btn-copy-link');
+                if (ok && btn) {
+                    btn.innerHTML = '<span class="material-symbols-outlined text-sm">check</span> Copied!';
+                    setTimeout(() => {
+                        btn.innerHTML = '<span class="material-symbols-outlined text-sm">content_copy</span> Copy';
+                    }, 2000);
+                }
+            }
+        });
+
+        // Native share API
+        document.getElementById('btn-share-native')?.addEventListener('click', async () => {
+            const link = document.getElementById('waiting-room-link')?.value;
+            if (link && navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Join my Mafia game!',
+                        text: `Join my Mafia room: ${AppState.roomCode}`,
+                        url: link
+                    });
+                } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Share failed:', e);
+                }
+            } else if (link) {
+                // Fallback: just copy the link
+                await Utils.copyToClipboard(link);
+                Utils.showToast('Link copied to clipboard!', 'success', 2000);
+            }
+        });
     }
 
     function setupGamePage() {
@@ -608,9 +687,9 @@
             AppState.hasVoted = true;
             document.getElementById('btn-cast-vote').disabled = true;
             Utils.setVisible('vote-confirmed', true);
-            // Deselect in grid
-            document.querySelectorAll('#game-player-grid .player-card.selected')
-                .forEach(c => c.classList.remove('selected'));
+            // Deselect in grid (use selected-overlay, not .selected class)
+            document.querySelectorAll('#game-player-grid .player-card .selected-overlay')
+                .forEach(el => el.classList.add('hidden'));
         });
 
         // ── Chat ──────────────────────────────────────────────────────────────

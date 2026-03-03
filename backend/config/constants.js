@@ -69,7 +69,7 @@ const ROOM_SETTINGS = {
 // ─── Phase Durations (seconds) ────────────────────────────────────────────────
 const PHASE_DURATIONS = {
     NIGHT: parseInt(process.env.NIGHT_DURATION_SECONDS) || 30,
-    DAY: parseInt(process.env.DAY_DURATION_SECONDS) || 60,
+    DAY: parseInt(process.env.DAY_DURATION_SECONDS) || 120,
     ROLE_REVEAL: parseInt(process.env.ROLE_REVEAL_DELAY_SECONDS) || 3
 };
 
